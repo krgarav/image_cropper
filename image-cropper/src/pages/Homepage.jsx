@@ -99,7 +99,7 @@ const Homepage = () => {
       return item.imageName;
     });
     setImageName(imageName[currIndex]);
-    setImage(imgUrl[currIndex]);
+    // setImage(imgUrl[currIndex]);
   }, [imgCtx.selectedImage, currIndex]);
   console.log(imgCtx.selectedImage);
   // useEffect(() => {
@@ -249,7 +249,7 @@ const Homepage = () => {
     imgCtx.resetSelectedImage();
     setCurrIndex(0);
     setFolderName("");
-    setImage("");
+    // setImage("");
     setRotate(0);
   };
   const handleDrop = (event) => {
