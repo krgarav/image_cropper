@@ -28,9 +28,8 @@ const Homepage = () => {
   const [rotate, setRotate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
-  const [status, setStatus] = useState("");
   const toastIdRef = useRef(null);
-  let progressToastId = null;
+  const hasInsertedImage = useRef(false);
   const theme = createTheme({
     palette: {
       ochre: {
@@ -41,6 +40,7 @@ const Homepage = () => {
       },
     },
   });
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "ArrowRight") {
@@ -55,11 +55,16 @@ const Homepage = () => {
     };
   }, []);
   useEffect(() => {
+    // imgCtx.addToSelectedImage(["hhki"]);
     // Update that same toast as each image comes through
     const handleProgress = (event, data) => {
       const { imageIndex, totalImages, imageName } = data;
       if (!toastIdRef.current) return; // no toast to update
-
+      // ✅ Only add the first image
+      if (!hasInsertedImage.current) {
+        imgCtx.addToSelectedImage([imageName]);
+        hasInsertedImage.current = true;
+      }
       // If it’s the very last image, mark success
       if (imageIndex === totalImages) {
         toast.update(toastIdRef.current, {
@@ -85,6 +90,7 @@ const Homepage = () => {
       );
     };
   }, []);
+
   useEffect(() => {
     const imgUrl = imgCtx.selectedImage.map((item) => {
       return item.imageUrl;
@@ -95,6 +101,7 @@ const Homepage = () => {
     setImageName(imageName[currIndex]);
     setImage(imgUrl[currIndex]);
   }, [imgCtx.selectedImage, currIndex]);
+  console.log(imgCtx.selectedImage);
   // useEffect(() => {
   //   if (!!image) {
   //     const fn = async () => {

@@ -10,13 +10,13 @@ function Imageprovider(props) {
   const [imgState, setImgState] = useState(initialData);
   const addToSelectedImageHandler = (imgArray) => {
     const copiedData = [...imgArray];
-    const ImageData = copiedData.map((image) => {
-      const imageUrl = URL.createObjectURL(image);
-      const imageName = image.name;
-      return { imageName, imageUrl };
-    });
+    // const ImageData = copiedData.map((image) => {
+    //   // const imageUrl = URL.createObjectURL(image);
+    //   const imageName = image.name;
+    //   return { imageName, imageUrl };
+    // });
     setImgState((prev) => {
-      return { ...prev, selectedImage: ImageData };
+      return { ...prev, selectedImage: copiedData };
     });
   };
   const addToCroppedImagesHandler = () => {};
