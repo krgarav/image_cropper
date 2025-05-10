@@ -94,7 +94,7 @@ function createWindow() {
     },
   });
   mainWindow.setMenu(null);
-  mainWindow.loadURL(`http://localhost:${5174}`);
+  mainWindow.loadURL(`http://localhost:${5173}`);
   mainWindow.webContents.openDevTools();
 }
 

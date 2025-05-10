@@ -29,7 +29,8 @@ const Homepage = () => {
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [status, setStatus] = useState("");
-
+  const toastIdRef = useRef(null);
+  let progressToastId = null;
   const theme = createTheme({
     palette: {
       ochre: {
@@ -54,18 +55,29 @@ const Homepage = () => {
     };
   }, []);
   useEffect(() => {
-    // Define the handleProgress function to show toast messages
+    // Update that same toast as each image comes through
     const handleProgress = (event, data) => {
       const { imageIndex, totalImages, imageName } = data;
-      toast.info(`✅ Processed ${imageIndex} / ${totalImages}: ${imageName}`, {
-        autoClose: 2000,
-      });
+      if (!toastIdRef.current) return; // no toast to update
+
+      // If it’s the very last image, mark success
+      if (imageIndex === totalImages) {
+        toast.update(toastIdRef.current, {
+          render: `🎉 All ${totalImages} images processed!`,
+          type: "success",
+          isLoading: false,
+          autoClose: 3000,
+        });
+        toastIdRef.current = null;
+      } else {
+        // Otherwise, show live progress
+        toast.update(toastIdRef.current, {
+          render: `✅ ${imageIndex} / ${totalImages}: ${imageName}`,
+        });
+      }
     };
 
-    // Listen for the 'pdf-progress' event from the main process
     window.electron.ipcRenderer.on("pdf-progress", handleProgress);
-
-    // Cleanup the event listener when the component is unmounted
     return () => {
       window.electron.ipcRenderer.removeListener(
         "pdf-progress",
@@ -107,54 +119,64 @@ const Homepage = () => {
 
   const handleFileChange = async (event) => {
     const files = event.target.files;
-    if (files.length > 0) {
-      const file = files[0];
+    if (!files || files.length === 0) return;
 
-      const reader = new FileReader();
-      reader.onload = async function (e) {
-        const arrayBuffer = e.target.result;
+    const file = files[0];
+    const reader = new FileReader();
 
-        // Generate a unique toast ID to prevent stacking
-        const toastId = toast.loading("Extraction in progress...");
+    reader.onload = async (e) => {
+      const arrayBuffer = e.target.result;
 
-        try {
-          const response = await window.electron.ipcRenderer.invoke(
-            "process-pdf",
-            {
-              buffer: arrayBuffer,
-              name: file.name,
-            }
-          );
+      // Start one persistent "loading" toast
+      toastIdRef.current = toast.loading("🔄 Extraction in progress…", {
+        autoClose: false,
+        closeOnClick: false,
+        draggable: false,
+      });
 
-          if (response.success === false) {
-            toast.update(toastId, {
-              render: `❌ ${response.error}`,
-              type: "error",
-              isLoading: false,
-              autoClose: 5000,
-            });
-          } else {
-            toast.update(toastId, {
-              render: "✅ Extraction completed successfully!",
-              type: "success",
-              isLoading: false,
-              autoClose: 3000,
-            });
-            console.log("Images received:", response.images);
-          }
-        } catch (err) {
-          toast.update(toastId, {
-            render: "❌ Unexpected error occurred during extraction.",
+      try {
+        // Invoke your main‐process PDF extractor
+        const response = await window.electron.ipcRenderer.invoke(
+          "process-pdf",
+          { buffer: arrayBuffer, name: file.name }
+        );
+
+        // If the main process signals a hard failure:
+        if (response.success === false) {
+          toast.update(toastIdRef.current, {
+            render: `❌ ${response.error}`,
             type: "error",
             isLoading: false,
             autoClose: 5000,
           });
-          console.error(err);
+          toastIdRef.current = null;
+          return;
         }
-      };
 
-      reader.readAsArrayBuffer(file);
-    }
+        // Otherwise, once *all* images are done, transform the toast
+        // (we’ll also handle this again in the progress listener
+        // for the final update, but it’s safe to do it here too)
+        toast.update(toastIdRef.current, {
+          render: "✅ Extraction completed successfully!",
+          type: "success",
+          isLoading: false,
+          autoClose: 3000,
+        });
+        console.log("Images received:", response.images);
+        toastIdRef.current = null;
+      } catch (err) {
+        toast.update(toastIdRef.current, {
+          render: "❌ Unexpected error during extraction.",
+          type: "error",
+          isLoading: false,
+          autoClose: 5000,
+        });
+        console.error(err);
+        toastIdRef.current = null;
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
   };
 
   const prevHandler = () => {
