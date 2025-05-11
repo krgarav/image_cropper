@@ -18,68 +18,6 @@ const port = 3400;
 // Create Express app
 const expressApp = express();
 
-// Middleware setup
-expressApp.use(bodyParser.json({ limit: "1mb" }));
-expressApp.use(bodyParser.urlencoded({ extended: true }));
-expressApp.use(
-  cors({
-    origin: "*", // Allow requests from any origin
-    methods: ["OPTIONS", "POST", "GET", "DELETE"], // Allow these HTTP methods
-    allowedHeaders: ["Content-Type", "Authorization"], // Allow these headers
-  })
-);
-
-// Get the path to the application executable directory
-// Get the path to the Documents directory
-const documentsDirectory = path.join(app.getPath("documents"), "uploads");
-
-// Ensure the uploads directory exists
-if (!fs.existsSync(documentsDirectory)) {
-  fs.mkdirSync(documentsDirectory, { recursive: true });
-}
-
-// Serve static files
-expressApp.use(express.static(path.join(__dirname, "build")));
-
-// Configure multer for file uploads
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, documentsDirectory);
-    },
-    filename: function (req, file, cb) {
-      cb(null, file.originalname);
-    },
-  }),
-});
-
-// Upload endpoint
-expressApp.post("/upload", upload.single("file"), (req, res) => {
-  const folderName = req.body.folderName;
-  let destinationFolder = documentsDirectory;
-
-  // If the user provided a folder name
-  if (folderName) {
-    // Resolve the folder path relative to the current working directory
-    const folderPath = path.resolve(documentsDirectory, folderName);
-
-    // Check if the folder exists
-    if (!fs.existsSync(folderPath)) {
-      // If the folder doesn't exist, create it
-      fs.mkdirSync(folderPath, { recursive: true });
-    }
-
-    destinationFolder = folderPath;
-  }
-
-  // Move the uploaded file to the specified destination folder
-  const file = req.file;
-  const destinationPath = path.join(destinationFolder, file.originalname);
-
-  fs.renameSync(file.path, destinationPath);
-
-  res.send("File uploaded successfully");
-});
 
 // Create main Electron window
 function createWindow() {
@@ -121,56 +59,6 @@ app.on("activate", () => {
     createWindow();
   }
 });
-
-// ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
-//   try {
-//     const pdfjsLib = await loadPdfJs(); // Load the PDF.js library
-
-//     // Convert Buffer to Uint8Array
-//     const pdfBuffer = new Uint8Array(buffer);
-
-//     const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
-//     const pdf = await loadingTask.promise;
-
-//     const pdfBaseName = path.parse(name).name;
-//     const documentsDir = app.getPath("documents");
-//     const outputDir = path.join(documentsDir, "images", pdfBaseName);
-//     fs.mkdirSync(outputDir, { recursive: true });
-
-//     const imageNames = [];
-
-//     for (let i = 0; i < pdf.numPages; i++) {
-//       const page = await pdf.getPage(i + 1);
-//       const viewport = page.getViewport({ scale: 2 });
-
-//       const canvas = createCanvas(viewport.width, viewport.height);
-//       const context = canvas.getContext("2d");
-
-//       const renderContext = {
-//         canvasContext: context,
-//         viewport: viewport,
-//       };
-
-//       await page.render(renderContext).promise;
-
-//       const imageBuffer = canvas.toBuffer("image/png");
-//       const imageName = `${pdfBaseName}-${i + 1}.png`;
-//       const imagePath = path.join(outputDir, imageName);
-
-//       fs.writeFileSync(imagePath, imageBuffer);
-
-//       imageNames.push(imageName);
-//     }
-
-//     return {
-//       folderName: pdfBaseName,
-//       images: imageNames,
-//     };
-//   } catch (err) {
-//     console.error("Failed to process PDF:", err);
-//     return { folderName: null, images: [] };
-//   }
-// });
 
 ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
   return new Promise((resolve, reject) => {

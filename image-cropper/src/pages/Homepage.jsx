@@ -101,6 +101,7 @@ const Homepage = () => {
     setImageName(imageName[currIndex]);
     // setImage(imgUrl[currIndex]);
   }, [imgCtx.selectedImage, currIndex]);
+
   console.log(imgCtx.selectedImage);
   // useEffect(() => {
   //   if (!!image) {
@@ -126,6 +127,7 @@ const Homepage = () => {
 
   const handleFileChange = async (event) => {
     const files = event.target.files;
+
     if (!files || files.length === 0) return;
 
     const file = files[0];
@@ -157,6 +159,7 @@ const Homepage = () => {
             autoClose: 5000,
           });
           toastIdRef.current = null;
+
           return;
         }
 
@@ -184,6 +187,10 @@ const Homepage = () => {
     };
 
     reader.readAsArrayBuffer(file);
+    // ✅ Save the file name in localStorage
+    const fileNameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
+    localStorage.setItem("currentDir", fileNameWithoutExtension);
+    console.log("Saved filename:", localStorage.getItem("currentDir"));
   };
 
   const prevHandler = () => {

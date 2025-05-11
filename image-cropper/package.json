@@ -10,11 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@emotion/react": "^11.11.4",
-    "@emotion/styled": "^11.11.0",
-    "@mui/icons-material": "^5.15.14",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^5.17.1",
     "@mui/lab": "^5.0.0-alpha.169",
-    "@mui/material": "^5.15.14",
+    "@mui/material": "^5.17.1",
     "@mui/styled-engine-sc": "^6.0.0-alpha.18",
     "bootstrap": "^5.3.3",
     "cropperjs": "^1.6.1",
