@@ -31,13 +31,12 @@ function createWindow() {
   mainWindow.setMenu(null);
   mainWindow.loadURL(`http://localhost:${port}`);
   // mainWindow.loadURL(`http://localhost:${5173}`);
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 }
 
 // Start Express server when Electro
 // n app is ready
 app.whenReady().then(async () => {
- 
   await startServer();
   expressApp.listen(port, () => {
     console.log(`Express server running at http://localhost:${port}`);
@@ -255,9 +254,14 @@ ipcMain.handle("get-image-names", async (event, directory) => {
 
     // Filter for image files (you can add more extensions if necessary)
     const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"];
-    const imageFiles = files.filter((file) =>
-      imageExtensions.includes(path.extname(file).toLowerCase())
-    );
+
+    const imageFiles = files
+      .filter((file) =>
+        imageExtensions.includes(path.extname(file).toLowerCase())
+      )
+      .sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+      ); // <-- Natural sort (e.g., test-1.png < test-10.png)
     // Get the total count of image files
     const totalImages = imageFiles.length;
     const rootDir = path.basename(directory);
@@ -309,6 +313,38 @@ ipcMain.handle("convert-dir-images-to-pdf", async (event, folderName) => {
     };
   } catch (error) {
     console.error("Error during PDF conversion:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+});
+
+ipcMain.handle("get-image-count", async (event, folderName) => {
+  try {
+    if (!folderName) {
+      throw new Error("Folder name not provided.");
+    }
+
+    const documentsDir = app.getPath("documents");
+    const croppedDir = path.join(documentsDir, "images", folderName, "cropped");
+
+    if (!fs.existsSync(croppedDir)) {
+      return { success: false, error: "'cropped' folder does not exist." };
+    }
+
+    const files = fs.readdirSync(croppedDir);
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"];
+    const imageFiles = files.filter((file) =>
+      imageExtensions.includes(path.extname(file).toLowerCase())
+    );
+
+    return {
+      success: true,
+      count: imageFiles.length,
+    };
+  } catch (error) {
+    console.error("Error getting image count:", error);
     return {
       success: false,
       error: error.message,
