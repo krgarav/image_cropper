@@ -49,6 +49,27 @@ const Homepage = () => {
 
   useEffect(() => {
     const name = localStorage.getItem("currentDir");
+    const getImageCount = async (folderName) => {
+      const result = await window.electron.ipcRenderer.invoke(
+        "get-image-count",
+        folderName
+      );
+
+      if (result.success) {
+        setCurrIndex(result.count - 1);
+        setIsCropped(true);
+        console.log("Image count:", result.count);
+      } else {
+        console.error("Error:", result.error);
+      }
+    };
+
+    if (name) {
+      getImageCount(name);
+    }
+  }, []);
+  useEffect(() => {
+    const name = localStorage.getItem("currentDir");
     if (name) {
       setFolderName(name);
       setDirName(name);
@@ -69,7 +90,6 @@ const Homepage = () => {
     };
   }, []);
   useEffect(() => {
-    // imgCtx.addToSelectedImage(["hhki"]);
     // Update that same toast as each image comes through
     const handleProgress = (event, data) => {
       const { imageIndex, totalImages, imageName } = data;
@@ -77,10 +97,10 @@ const Homepage = () => {
       if (!toastIdRef.current) return; // no toast to update
       // ✅ Only add the first image
       if (!hasInsertedImage.current) {
-        // imgCtx.addToSelectedImage(imageName);
         setTotalImages(totalImages);
         hasInsertedImage.current = true;
       }
+      console.log(imageName);
       imgCtx.addToSelectedImage(imageName);
       // If it’s the very last image, mark success
       if (imageIndex === totalImages) {
@@ -93,7 +113,7 @@ const Homepage = () => {
         toastIdRef.current = null;
       } else {
         // Otherwise, show live progress
-        // imgCtx.addToSelectedImage(imageName);
+
         toast.update(toastIdRef.current, {
           render: `✅ ${imageIndex} / ${totalImages}: ${imageName}`,
         });
@@ -239,7 +259,8 @@ const Homepage = () => {
       }
     });
   };
-  // console.log(isCropped);
+
+  console.log(imgSelected);
   const saveHandler = async () => {
     setLoading(true);
     if (!folderName) {
@@ -408,6 +429,7 @@ const Homepage = () => {
       if (result.success) {
         if (result.images.length > 0) {
           imgCtx.addAllImg(result.images); // Set the images if found
+          console.log(result.images);
           localStorage.setItem("currentDir", result.rootDir);
         } else {
           imgCtx.addAllImg([]);
