@@ -31,7 +31,7 @@ function createWindow() {
   mainWindow.setMenu(null);
   mainWindow.loadURL(`http://localhost:${port}`);
   // mainWindow.loadURL(`http://localhost:${5173}`);
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 }
 
 // Start Express server when Electro
