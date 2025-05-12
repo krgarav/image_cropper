@@ -7,8 +7,9 @@ const ImageContext = React.createContext({
   addToSelectedImage: () => {},
   addToCroppedImages: () => {},
   removeFromCroppedImage: () => {},
-  addToPath:()=>{},
-  resetSelectedImage:()=>{}
+  addToPath: () => {},
+  resetSelectedImage: () => {},
+  addAllImg:()=>{}
 });
 
 export default ImageContext;

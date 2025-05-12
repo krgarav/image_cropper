@@ -18,7 +18,9 @@ import "cropperjs/dist/cropper.css";
 const Homepage = () => {
   const [image, setImage] = useState(null);
   const [currIndex, setCurrIndex] = useState(0);
+  const [totalImages, setTotalImages] = useState(null);
   const imgCtx = useContext(imageContext);
+  const [dirName, setDirName] = useState(null);
   const cropperRef = useRef(null);
   const imgSelected = imgCtx.selectedImage;
   const [imgWidth, setImgWidth] = useState("");
@@ -28,6 +30,10 @@ const Homepage = () => {
   const [rotate, setRotate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
+  const [isCropped, setIsCropped] = useState(false);
+  const [selectedDir, setSelectedDir] = useState("");
+  const [dirError, setDirError] = useState(null);
+  const [isConverting, setIsConverting] = useState(false); // to disable button
   const toastIdRef = useRef(null);
   const hasInsertedImage = useRef(false);
   const theme = createTheme({
@@ -40,6 +46,14 @@ const Homepage = () => {
       },
     },
   });
+
+  useEffect(() => {
+    const name = localStorage.getItem("currentDir");
+    if (name) {
+      setFolderName(name);
+      setDirName(name);
+    }
+  }, [totalImages, imgCtx]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -59,12 +73,15 @@ const Homepage = () => {
     // Update that same toast as each image comes through
     const handleProgress = (event, data) => {
       const { imageIndex, totalImages, imageName } = data;
+
       if (!toastIdRef.current) return; // no toast to update
       // ✅ Only add the first image
       if (!hasInsertedImage.current) {
-        imgCtx.addToSelectedImage([imageName]);
+        // imgCtx.addToSelectedImage(imageName);
+        setTotalImages(totalImages);
         hasInsertedImage.current = true;
       }
+      imgCtx.addToSelectedImage(imageName);
       // If it’s the very last image, mark success
       if (imageIndex === totalImages) {
         toast.update(toastIdRef.current, {
@@ -76,6 +93,7 @@ const Homepage = () => {
         toastIdRef.current = null;
       } else {
         // Otherwise, show live progress
+        // imgCtx.addToSelectedImage(imageName);
         toast.update(toastIdRef.current, {
           render: `✅ ${imageIndex} / ${totalImages}: ${imageName}`,
         });
@@ -101,18 +119,6 @@ const Homepage = () => {
     setImageName(imageName[currIndex]);
     // setImage(imgUrl[currIndex]);
   }, [imgCtx.selectedImage, currIndex]);
-
-  console.log(imgCtx.selectedImage);
-  // useEffect(() => {
-  //   if (!!image) {
-  //     const fn = async () => {
-  //       const { width, height } = await getImageDimensions(image);
-  //       setImgWidth(width);
-  //       setImgHeight(height);
-  //     };
-  //     fn();
-  //   }
-  // }, [image]);
 
   useEffect(() => {
     if (cropperRef.current !== null) {
@@ -190,74 +196,148 @@ const Homepage = () => {
     // ✅ Save the file name in localStorage
     const fileNameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
     localStorage.setItem("currentDir", fileNameWithoutExtension);
+    setDirName(fileNameWithoutExtension);
     console.log("Saved filename:", localStorage.getItem("currentDir"));
   };
+  const checkCroppedStatus = async (imageName, folderName) => {
+    const result = await window.electron.ipcRenderer.invoke(
+      "check-image-exists",
+      {
+        folderName: `${folderName}`,
+        imageName: `cropped-${imageName}`,
+      }
+    );
 
-  const prevHandler = () => {
+    setIsCropped(result.exists);
+  };
+
+  const prevHandler = async () => {
     setCurrIndex((value) => {
       if (value === 0) {
         alert("No previous image present");
         return value;
       } else {
-        return value - 1;
-      }
-    });
-  };
-  const nextHandler = () => {
-    setCurrIndex((value) => {
-      if (value === imgCtx.selectedImage.length - 1) {
-        alert("You have reached to last image");
-        return value;
-      } else {
-        return value + 1;
+        const newIndex = value - 1;
+        const imageName = imgCtx.selectedImage[newIndex];
+        checkCroppedStatus(imageName, folderName);
+        return newIndex;
       }
     });
   };
 
+  const nextHandler = async () => {
+    setCurrIndex((value) => {
+      if (value === imgCtx.selectedImage.length - 1) {
+        alert("You have reached the last image");
+        return value;
+      } else {
+        const newIndex = value + 1;
+        console.log(newIndex);
+        const imageName = imgCtx.selectedImage[newIndex];
+        checkCroppedStatus(imageName, folderName);
+        return newIndex;
+      }
+    });
+  };
+  // console.log(isCropped);
   const saveHandler = async () => {
     setLoading(true);
     if (!folderName) {
-      toast.error("please enter folder Name !!!!");
+      toast.error("Please enter folder name!");
       setLoading(false);
       return;
     }
+    const imageName = imgSelected[currIndex];
     const cropper = cropperRef.current?.cropper;
-    const croppedCanvas = cropper.getCroppedCanvas();
-    const fileObj = imgCtx.selectedImage.filter((item) => {
-      return item.imageUrl === image;
-    });
-    const filename = fileObj[0].imageName;
-    if (croppedCanvas) {
-      try {
-        const blob = await new Promise((resolve) => {
-          croppedCanvas.toBlob(resolve, "image/png");
-        });
+    const croppedCanvas = cropper?.getCroppedCanvas();
 
-        const formData = new FormData();
-        formData.append("file", blob, filename);
-        formData.append("folderName", folderName);
-        await fetch("http://localhost:3400/upload", {
-          method: "POST",
-          body: formData,
-        });
-        toast.success(
-          `Cropped ${filename} saved in ${folderName} Successfully`
-        );
-        setLoading(false);
+    if (!croppedCanvas) {
+      toast.error("No cropped area found");
+      setLoading(false);
+      return;
+    }
+
+    const filename = imageName || `cropped-${Date.now()}.png`;
+
+    try {
+      const blob = await new Promise((resolve) => {
+        croppedCanvas.toBlob(resolve, "image/png");
+      });
+
+      const arrayBuffer = await blob.arrayBuffer();
+
+      // Send buffer and metadata to main process
+      const result = await window.electron.ipcRenderer.invoke(
+        "save-cropped-img",
+        {
+          buffer: Array.from(new Uint8Array(arrayBuffer)), // serialize
+          filename,
+          folderName,
+          imageName,
+        }
+      );
+
+      if (result.success) {
+        toast.success(`${filename} saved in ${folderName}`);
         nextHandler();
-      } catch (error) {
-        toast.error("Image could not be saved");
-        setLoading(false);
-        console.error("Error saving file:", error);
+      } else {
+        throw new Error(result.error);
       }
+    } catch (err) {
+      toast.error("Image could not be saved");
+      console.error("IPC error:", err);
+    } finally {
+      setLoading(false);
     }
   };
-  const clearHandler = () => {
-    imgCtx.resetSelectedImage();
-    setCurrIndex(0);
-    setFolderName("");
-    // setImage("");
-    setRotate(0);
+  // const clearHandler = () => {
+  //   imgCtx.resetSelectedImage();
+  //   setCurrIndex(0);
+  //   setFolderName("");
+  //   // setImage("");
+  //   setRotate(0);
+  // };
+
+  const clearHandler = async () => {
+    if (!folderName) {
+      toast.error("No folder name provided.");
+      return;
+    }
+
+    setIsConverting(true);
+    const loadingToast = toast.loading("Creating PDF...");
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        "convert-dir-images-to-pdf",
+        folderName
+      );
+
+      if (result.success) {
+        toast.update(loadingToast, {
+          render: `PDF created at: ${result.outputPath}`,
+          type: "success",
+          isLoading: false,
+          autoClose: 5000,
+        });
+      } else {
+        toast.update(loadingToast, {
+          render: `❌ ${result.error}`,
+          type: "error",
+          isLoading: false,
+          autoClose: 5000,
+        });
+      }
+    } catch (error) {
+      toast.update(loadingToast, {
+        render: `❌ Unexpected error: ${error.message}`,
+        type: "error",
+        isLoading: false,
+        autoClose: 5000,
+      });
+    } finally {
+      setIsConverting(false);
+    }
   };
   const handleDrop = (event) => {
     event.preventDefault();
@@ -295,6 +375,51 @@ const Homepage = () => {
     setFolderName(event.target.value);
   };
 
+  const handleDirectorySelect = async () => {
+    try {
+      // Select the directory
+      const result = await window.electron.ipcRenderer.invoke(
+        "select-directory"
+      );
+
+      if (result.success) {
+        setSelectedDir(result.directory); // Set the selected directory
+        // Now, get the image names from the selected directory
+        await fetchImageNames(result.directory);
+      } else {
+        setDirError(result.error); // Set error if the directory is not selected properly
+        imgCtx.addAllImg([]); // Clear any previous image names
+      }
+    } catch (error) {
+      setDirError("An error occurred while selecting the directory.");
+      imgCtx.addAllImg([]); // Clear any previous image names
+      console.error(error);
+    }
+  };
+
+  const fetchImageNames = async (directory) => {
+    try {
+      // Fetch image names from the selected directory
+      const result = await window.electron.ipcRenderer.invoke(
+        "get-image-names",
+        directory
+      );
+
+      if (result.success) {
+        if (result.images.length > 0) {
+          imgCtx.addAllImg(result.images); // Set the images if found
+          localStorage.setItem("currentDir", result.rootDir);
+        } else {
+          imgCtx.addAllImg([]);
+        }
+      } else {
+        imgCtx.addAllImg([]); // Clear previous images
+      }
+    } catch (error) {
+      imgCtx.addAllImg([]); // Clear previous images
+      console.error(error);
+    }
+  };
   return (
     <>
       <DrawerAppBar
@@ -305,35 +430,58 @@ const Homepage = () => {
               {currIndex + 1} of {imgCtx.selectedImage.length}
             </span>
             <span style={{ color: "whiteSmoke" }}>:</span>
-            {imageName}
+            {imgCtx.selectedImage[currIndex]}
           </article>
         }
       />
-
-      <div style={{ padding: "20px" }}>
-        {/* <ToastContainer position="top-right" /> */}
-      </div>
       <main className={classes.main_container}>
         <div className={classes.box}>
           {imgSelected.length === 0 && (
-            <div
-              className={`${classes.dropbox} `}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-            >
-              <div className={`${isDragOver ? classes.dragOver : ""}`}>
-                <label htmlFor="file-upload">
-                  <h1 className={classes.uploader}>Click here to choose PDF</h1>
-                </label>
-                <input
-                  id="file-upload"
-                  type="file"
-                  multiple
-                  accept="application/pdf"
-                  onChange={handleFileChange}
-                  style={{ display: "none" }}
-                />
+            <div className={classes.mainbox}>
+              <div
+                className={`${classes.dropbox} `}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+              >
+                <div className={`${isDragOver ? classes.dragOver : ""}`}>
+                  <label htmlFor="file-upload">
+                    <h1 className={classes.uploader}>
+                      Click here to choose PDF
+                    </h1>
+                  </label>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    multiple
+                    accept="application/pdf"
+                    onChange={handleFileChange}
+                    style={{ display: "none" }}
+                  />
+                </div>
+              </div>
+
+              <div className={classes.continueBox}>
+                <h2 className={classes.continueText}>
+                  📂 Continue Working on Existing Images
+                </h2>
+                <div className={classes.directorySelector}>
+                  {selectedDir ? (
+                    <div>
+                      <p>Selected Directory: {selectedDir}</p>
+                    </div>
+                  ) : (
+                    <button
+                      className={classes.selectButton}
+                      onClick={handleDirectorySelect}
+                    >
+                      Select Directory
+                    </button>
+                  )}
+                  {dirError && (
+                    <p className={classes.errorMessage}>{dirError}</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -350,8 +498,19 @@ const Homepage = () => {
                   borderRadius: "5px",
                 }}
               >
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  Cropped Status:
+                  {isCropped ? (
+                    <span style={{ color: "green" }}>✅</span>
+                  ) : (
+                    <span style={{ color: "red" }}>❌</span>
+                  )}
+                </div>
+
                 <Cropper
-                  src={image}
+                  src={`http://localhost:3400/images/${dirName}/${imgSelected[currIndex]}`}
                   style={{
                     height: "70vh", // Updated to 'vh' for viewport height
                     width: "70vw", // Updated to 'vw' for viewport width
@@ -414,8 +573,9 @@ const Homepage = () => {
                     color="primary"
                     onClick={clearHandler}
                     fullWidth
+                    disabled={isConverting}
                   >
-                    CLEAR IMAGES
+                    {isConverting ? "Creating PDF..." : "CREATE PDF"}
                   </Button>
                 </Grid>
 
@@ -476,6 +636,7 @@ const Homepage = () => {
                     focused
                     onChange={handleFolderChange}
                     fullWidth
+                    disabled
                   />
                 </Grid>
               </Grid>

@@ -6,13 +6,58 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  min-height: 92vh;
+}
+.mainbox {
+  display: flex;
+}
+.continueBox {
+  padding: 20px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.continueText {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.continueText:hover {
+  color: #007bff;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.directorySelector {
+  margin-top: 20px;
+}
+
+.selectButton {
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.selectButton:hover {
+  background-color: #0056b3;
+}
+
+.errorMessage {
+  color: red;
+  font-size: 0.9rem;
+  margin-top: 10px;
 }
 .box {
   border: 1px solid black;
   padding: 10px;
   margin-top: 20px;
   display: flex;
-  min-height: 65dvh;
+  min-height: 60dvh;
   min-width: 80dvw;
   box-shadow: 0 0 10px 0.1px;
   border-radius: 5px;
@@ -33,12 +78,12 @@
   text-align: start;
   font-weight: 700;
 }
-.folder_container{
+.folder_container {
   width: 50%;
   display: flex;
   justify-content: end;
 }
-.headSection{
+.headSection {
   display: flex;
   justify-content: space-around;
 }
@@ -58,7 +103,7 @@
 .cropper {
   width: 100%;
 }
-.rotate_section{
+.rotate_section {
   display: flex;
   gap: 20px;
   justify-content: center;

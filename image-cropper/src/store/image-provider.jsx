@@ -8,15 +8,22 @@ function Imageprovider(props) {
     pathToSave: "",
   };
   const [imgState, setImgState] = useState(initialData);
-  const addToSelectedImageHandler = (imgArray) => {
-    const copiedData = [...imgArray];
-    // const ImageData = copiedData.map((image) => {
-    //   // const imageUrl = URL.createObjectURL(image);
-    //   const imageName = image.name;
-    //   return { imageName, imageUrl };
-    // });
+  const addToSelectedImageHandler = (imageName) => {
     setImgState((prev) => {
-      return { ...prev, selectedImage: copiedData };
+      if (prev.selectedImage.includes(imageName)) return prev;
+      return {
+        ...prev,
+        selectedImage: [...prev.selectedImage, imageName],
+      };
+    });
+  };
+
+  const addAllToSelectedImageHandler = (arrayOfname) => {
+    setImgState((prev) => {
+      return {
+        ...prev,
+        selectedImage: arrayOfname,
+      };
     });
   };
   const addToCroppedImagesHandler = () => {};
@@ -39,6 +46,7 @@ function Imageprovider(props) {
     removeFromCroppedImage: removeFromCroppedImageHandler,
     addToPath: addToPathHandler,
     resetSelectedImage: resetSelectedImageHandler,
+    addAllImg : addAllToSelectedImageHandler
   };
 
   return (
