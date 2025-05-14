@@ -15,6 +15,7 @@ import { MdOutlineRotate90DegreesCw } from "react-icons/md";
 // import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "cropperjs/dist/cropper.css";
+import { useCallback } from "react";
 const Homepage = () => {
   const [image, setImage] = useState(null);
   const [currIndex, setCurrIndex] = useState(0);
@@ -75,7 +76,34 @@ const Homepage = () => {
       setDirName(name);
     }
   }, [totalImages, imgCtx]);
+  const prevHandler = async () => {
+    setCurrIndex((value) => {
+      if (value === 0) {
+        alert("No previous image present");
+        return value;
+      } else {
+        const newIndex = value - 1;
+        const imageName = imgCtx.selectedImage[newIndex];
+        checkCroppedStatus(imageName, folderName);
+        return newIndex;
+      }
+    });
+  };
 
+  const nextHandler = async () => {
+    setCurrIndex((value) => {
+      if (value === imgCtx.selectedImage.length - 1) {
+        alert("You have reached the last image");
+        return value;
+      } else {
+        const newIndex = value + 1;
+        console.log(newIndex);
+        const imageName = imgCtx.selectedImage[newIndex];
+        checkCroppedStatus(imageName, folderName);
+        return newIndex;
+      }
+    });
+  };
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "ArrowRight") {
@@ -88,7 +116,7 @@ const Homepage = () => {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [nextHandler]);
   useEffect(() => {
     // Update that same toast as each image comes through
     const handleProgress = (event, data) => {
@@ -151,6 +179,98 @@ const Homepage = () => {
     }
   }, [cropperRef, rotate]);
 
+  const saveHandler = useCallback(async () => {
+    setLoading(true);
+
+    if (!folderName) {
+      toast.error("Please enter folder name!");
+      setLoading(false);
+      return;
+    }
+
+    if (
+      !imgSelected ||
+      !Array.isArray(imgSelected) ||
+      imgSelected.length === 0 ||
+      currIndex < 0 ||
+      !imgSelected[currIndex]
+    ) {
+      toast.error("No image selected!");
+      setLoading(false);
+      return;
+    }
+
+    const imageName = imgSelected[currIndex];
+    const cropper = cropperRef.current?.cropper;
+
+    if (!cropper) {
+      toast.error("Cropper not initialized");
+      setLoading(false);
+      return;
+    }
+
+    const croppedCanvas = cropper.getCroppedCanvas();
+    if (!croppedCanvas) {
+      toast.error("No cropped area found");
+      setLoading(false);
+      return;
+    }
+
+    const filename = imageName || `cropped-${Date.now()}.png`;
+
+    try {
+      const blob = await new Promise((resolve, reject) => {
+        croppedCanvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error("Failed to create blob from canvas"));
+        }, "image/png");
+      });
+
+      const arrayBuffer = await blob.arrayBuffer();
+
+      if (!window.electron?.ipcRenderer?.invoke) {
+        toast.error("IPC not available");
+        setLoading(false);
+        return;
+      }
+
+      const result = await window.electron.ipcRenderer.invoke(
+        "save-cropped-img",
+        {
+          buffer: Array.from(new Uint8Array(arrayBuffer)),
+          filename,
+          folderName,
+          imageName,
+        }
+      );
+
+      if (result.success) {
+        toast.success(`${filename} saved in ${folderName}`);
+        nextHandler?.();
+      } else {
+        throw new Error(result.error || "Unknown IPC error");
+      }
+    } catch (err) {
+      toast.error("Image could not be saved");
+      console.error("Save Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [folderName, imgSelected, currIndex, cropperRef, nextHandler]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // e.altKey checks if Alt is pressed, e.key === 's' checks for 's' key
+      if (e.key === "Enter") {
+        e.preventDefault(); // Prevent any default behavior
+        saveHandler();
+        console.log("Alt + S pressed");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [saveHandler]);
   const handleFileChange = async (event) => {
     const files = event.target.files;
 
@@ -231,86 +351,8 @@ const Homepage = () => {
     setIsCropped(result.exists);
   };
 
-  const prevHandler = async () => {
-    setCurrIndex((value) => {
-      if (value === 0) {
-        alert("No previous image present");
-        return value;
-      } else {
-        const newIndex = value - 1;
-        const imageName = imgCtx.selectedImage[newIndex];
-        checkCroppedStatus(imageName, folderName);
-        return newIndex;
-      }
-    });
-  };
-
-  const nextHandler = async () => {
-    setCurrIndex((value) => {
-      if (value === imgCtx.selectedImage.length - 1) {
-        alert("You have reached the last image");
-        return value;
-      } else {
-        const newIndex = value + 1;
-        console.log(newIndex);
-        const imageName = imgCtx.selectedImage[newIndex];
-        checkCroppedStatus(imageName, folderName);
-        return newIndex;
-      }
-    });
-  };
-
   console.log(imgSelected);
-  const saveHandler = async () => {
-    setLoading(true);
-    if (!folderName) {
-      toast.error("Please enter folder name!");
-      setLoading(false);
-      return;
-    }
-    const imageName = imgSelected[currIndex];
-    const cropper = cropperRef.current?.cropper;
-    const croppedCanvas = cropper?.getCroppedCanvas();
 
-    if (!croppedCanvas) {
-      toast.error("No cropped area found");
-      setLoading(false);
-      return;
-    }
-
-    const filename = imageName || `cropped-${Date.now()}.png`;
-
-    try {
-      const blob = await new Promise((resolve) => {
-        croppedCanvas.toBlob(resolve, "image/png");
-      });
-
-      const arrayBuffer = await blob.arrayBuffer();
-
-      // Send buffer and metadata to main process
-      const result = await window.electron.ipcRenderer.invoke(
-        "save-cropped-img",
-        {
-          buffer: Array.from(new Uint8Array(arrayBuffer)), // serialize
-          filename,
-          folderName,
-          imageName,
-        }
-      );
-
-      if (result.success) {
-        toast.success(`${filename} saved in ${folderName}`);
-        nextHandler();
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (err) {
-      toast.error("Image could not be saved");
-      console.error("IPC error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
   // const clearHandler = () => {
   //   imgCtx.resetSelectedImage();
   //   setCurrIndex(0);
