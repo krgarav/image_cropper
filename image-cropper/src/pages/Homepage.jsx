@@ -179,80 +179,155 @@ const Homepage = () => {
     }
   }, [cropperRef, rotate]);
 
+  // const saveHandler = useCallback(async () => {
+  //   setLoading(true);
+
+  //   if (!folderName) {
+  //     toast.error("Please enter folder name!");
+  //     setLoading(false);
+  //     return;
+  //   }
+
+  //   if (
+  //     !imgSelected ||
+  //     !Array.isArray(imgSelected) ||
+  //     imgSelected.length === 0 ||
+  //     currIndex < 0 ||
+  //     !imgSelected[currIndex]
+  //   ) {
+  //     toast.error("No image selected!");
+  //     setLoading(false);
+  //     return;
+  //   }
+
+  //   const imageName = imgSelected[currIndex];
+  //   const cropper = cropperRef.current?.cropper;
+
+  //   if (!cropper) {
+  //     toast.error("Cropper not initialized");
+  //     setLoading(false);
+  //     return;
+  //   }
+
+  //   const croppedCanvas = cropper.getCroppedCanvas();
+  //   if (!croppedCanvas) {
+  //     toast.error("No cropped area found");
+  //     setLoading(false);
+  //     return;
+  //   }
+
+  //   const filename = imageName || `cropped-${Date.now()}.png`;
+
+  //   try {
+  //     const blob = await new Promise((resolve, reject) => {
+  //       croppedCanvas.toBlob((b) => {
+  //         if (b) resolve(b);
+  //         else reject(new Error("Failed to create blob from canvas"));
+  //       }, "image/png");
+  //     });
+
+  //     const arrayBuffer = await blob.arrayBuffer();
+
+  //     if (!window.electron?.ipcRenderer?.invoke) {
+  //       toast.error("IPC not available");
+  //       setLoading(false);
+  //       return;
+  //     }
+
+  //     const result = await window.electron.ipcRenderer.invoke(
+  //       "save-cropped-img",
+  //       {
+  //         buffer: Array.from(new Uint8Array(arrayBuffer)),
+  //         filename,
+  //         folderName,
+  //         imageName,
+  //       }
+  //     );
+
+  //     if (result.success) {
+  //       toast.success(`${filename} saved in ${folderName}`);
+  //       nextHandler?.();
+  //     } else {
+  //       throw new Error(result.error || "Unknown IPC error");
+  //     }
+  //   } catch (err) {
+  //     toast.error("Image could not be saved");
+  //     console.error("Save Error:", err);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }, [folderName, imgSelected, currIndex, cropperRef, nextHandler]);
+
   const saveHandler = useCallback(async () => {
     setLoading(true);
 
-    if (!folderName) {
-      toast.error("Please enter folder name!");
-      setLoading(false);
-      return;
-    }
-
-    if (
-      !imgSelected ||
-      !Array.isArray(imgSelected) ||
-      imgSelected.length === 0 ||
-      currIndex < 0 ||
-      !imgSelected[currIndex]
-    ) {
-      toast.error("No image selected!");
-      setLoading(false);
-      return;
-    }
-
-    const imageName = imgSelected[currIndex];
-    const cropper = cropperRef.current?.cropper;
-
-    if (!cropper) {
-      toast.error("Cropper not initialized");
-      setLoading(false);
-      return;
-    }
-
-    const croppedCanvas = cropper.getCroppedCanvas();
-    if (!croppedCanvas) {
-      toast.error("No cropped area found");
-      setLoading(false);
-      return;
-    }
-
-    const filename = imageName || `cropped-${Date.now()}.png`;
-
     try {
+      if (!folderName?.trim()) {
+        toast.error("Please enter folder name!");
+        return;
+      }
+
+      if (
+        !Array.isArray(imgSelected) ||
+        imgSelected.length === 0 ||
+        currIndex < 0 ||
+        !imgSelected[currIndex]
+      ) {
+        toast.error("No image selected!");
+        return;
+      }
+
+      const imageName = imgSelected[currIndex];
+      const cropper = cropperRef.current?.cropper;
+
+      if (!cropper) {
+        toast.error("Cropper not initialized");
+        return;
+      }
+
+      const croppedCanvas = cropper.getCroppedCanvas();
+      if (!croppedCanvas) {
+        toast.error("No cropped area found");
+        return;
+      }
+
       const blob = await new Promise((resolve, reject) => {
-        croppedCanvas.toBlob((b) => {
-          if (b) resolve(b);
-          else reject(new Error("Failed to create blob from canvas"));
-        }, "image/png");
+        croppedCanvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("Failed to create blob"))),
+          "image/jpeg",
+          0.95
+        );
       });
 
       const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = Array.from(new Uint8Array(arrayBuffer));
 
       if (!window.electron?.ipcRenderer?.invoke) {
         toast.error("IPC not available");
-        setLoading(false);
         return;
       }
 
       const result = await window.electron.ipcRenderer.invoke(
         "save-cropped-img",
         {
-          buffer: Array.from(new Uint8Array(arrayBuffer)),
-          filename,
+          buffer: uint8Array,
+          filename: `cropped-${imageName.replace(/\s+/g, "_")}`,
           folderName,
           imageName,
         }
       );
 
       if (result.success) {
-        toast.success(`${filename} saved in ${folderName}`);
+        toast.success(`${imageName} saved in "${folderName}"`);
+        // cropper.destroy();
+        // cropperRef.current = null;
         nextHandler?.();
       } else {
         throw new Error(result.error || "Unknown IPC error");
       }
     } catch (err) {
-      toast.error("Image could not be saved");
       console.error("Save Error:", err);
+      toast.error("Image could not be saved");
     } finally {
       setLoading(false);
     }

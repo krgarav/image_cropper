@@ -133,6 +133,44 @@ ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
   });
 });
 
+// ipcMain.handle(
+//   "save-cropped-img",
+//   async (event, { buffer, folderName, imageName }) => {
+//     try {
+//       if (!buffer || !folderName) {
+//         throw new Error("Missing image buffer or folder name.");
+//       }
+
+//       const documentsDir = app.getPath("documents");
+//       const baseDir = path.join(documentsDir, "images", folderName); // Require this to exist
+//       const croppedDir = path.join(baseDir, "cropped"); // Create this if needed
+
+//       // ✅ Check base folder exists
+//       if (!fs.existsSync(baseDir)) {
+//         return {
+//           success: false,
+//           error: `Folder "${folderName}" does not exist in Documents/images.`,
+//         };
+//       }
+
+//       // ✅ Create "cropped" folder if it doesn't exist
+//       if (!fs.existsSync(croppedDir)) {
+//         fs.mkdirSync(croppedDir);
+//       }
+
+//       const fileName = `cropped-${imageName}`;
+//       const filePath = path.join(croppedDir, fileName);
+
+//       fs.writeFileSync(filePath, Buffer.from(buffer));
+
+//       return { success: true, path: filePath };
+//     } catch (error) {
+//       console.error("Error saving cropped image:", error);
+//       return { success: false, error: error.message };
+//     }
+//   }
+// );
+
 ipcMain.handle(
   "save-cropped-img",
   async (event, { buffer, folderName, imageName }) => {
@@ -142,10 +180,9 @@ ipcMain.handle(
       }
 
       const documentsDir = app.getPath("documents");
-      const baseDir = path.join(documentsDir, "images", folderName); // Require this to exist
-      const croppedDir = path.join(baseDir, "cropped"); // Create this if needed
+      const baseDir = path.join(documentsDir, "images", folderName);
+      const croppedDir = path.join(baseDir, "cropped");
 
-      // ✅ Check base folder exists
       if (!fs.existsSync(baseDir)) {
         return {
           success: false,
@@ -153,15 +190,15 @@ ipcMain.handle(
         };
       }
 
-      // ✅ Create "cropped" folder if it doesn't exist
       if (!fs.existsSync(croppedDir)) {
         fs.mkdirSync(croppedDir);
       }
 
-      const fileName = `cropped-${imageName}`;
+      const fileName = `cropped-${imageName.replace(/\s+/g, "_")}`;
       const filePath = path.join(croppedDir, fileName);
 
-      fs.writeFileSync(filePath, Buffer.from(buffer));
+      // ✅ Convert from Uint8Array to Buffer before saving
+      await fs.promises.writeFile(filePath, Buffer.from(buffer));
 
       return { success: true, path: filePath };
     } catch (error) {
