@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, Router } from "react-router-dom";
 import "./App.css";
 import Homepage from "./pages/Homepage";
+import Mainpage from "./pages/Mainpage";
 
 function App() {
   return (

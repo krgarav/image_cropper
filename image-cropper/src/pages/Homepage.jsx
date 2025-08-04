@@ -16,8 +16,9 @@ import { MdOutlineRotate90DegreesCw } from "react-icons/md";
 import "react-toastify/dist/ReactToastify.css";
 import "cropperjs/dist/cropper.css";
 import { useCallback } from "react";
+import path from "path-browserify";
+
 const Homepage = () => {
-  const [image, setImage] = useState(null);
   const [currIndex, setCurrIndex] = useState(0);
   const [totalImages, setTotalImages] = useState(null);
   const imgCtx = useContext(imageContext);
@@ -27,7 +28,6 @@ const Homepage = () => {
   const [imgWidth, setImgWidth] = useState("");
   const [imgHeight, setImgHeight] = useState("");
   const [imageName, setImageName] = useState("");
-  const [isDragOver, setIsDragOver] = useState(false);
   const [rotate, setRotate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [folderName, setFolderName] = useState("");
@@ -47,35 +47,97 @@ const Homepage = () => {
       },
     },
   });
+  const [sourceDir, setSourceDir] = useState("");
+  const [destinationDir, setDestinationDir] = useState("");
+  const [imageSrc, setImageSrc] = useState(null);
+  const [totalPdfs, setTotalPdfs] = useState([]);
+  const [currentPdfIndex, setCurrentPdfIndex] = useState(0);
 
   useEffect(() => {
-    const name = localStorage.getItem("currentDir");
-    const getImageCount = async (folderName) => {
-      const result = await window.electron.ipcRenderer.invoke(
-        "get-image-count",
-        folderName
+    const getTotalImages = async () => {
+      const response = await window.electron.ipcRenderer.invoke(
+        "get-total-images",
+        {
+          directory: destinationDir,
+          baseFolder: totalPdfs[currentPdfIndex], // or whatever folder you want
+        }
       );
 
-      if (result.success) {
-        setCurrIndex(result.count - 1);
-        setIsCropped(true);
-        console.log("Image count:", result.count);
+      if (response.success) {
+        imgCtx.addAllImg(response.imageFiles);
+        setCurrIndex(0);
+        setTotalImages(response.totalImages);
+        console.log("Total images:", response.totalImages);
+        console.log("Files:", response.imageFiles);
       } else {
-        console.error("Error:", result.error);
+        console.error("Failed to read images:", response.error);
+      }
+    };
+    getTotalImages();
+  }, [currentPdfIndex, totalPdfs]);
+
+  useEffect(() => {
+    const loadImage = async () => {
+      try {
+        if (
+          !imgSelected ||
+          imgSelected.length === 0 ||
+          !imgSelected[currIndex]
+        ) {
+          console.warn("No image selected or invalid index.");
+          return;
+        }
+
+        const fullImageName = imgSelected[currIndex]; // e.g., 'erew-1.png'
+        const baseName = fullImageName.replace(/-\d+\.png$/, ""); // extract 'erew'
+
+        const fullPath = `${destinationDir}\\${baseName}\\${fullImageName}`;
+
+        const base64 = await window.electron.ipcRenderer.invoke(
+          "get-base64-image",
+          fullPath
+        );
+
+        setImageSrc(base64);
+      } catch (err) {
+        console.error("Failed to load image:", err);
+        setImageSrc(null); // or show fallback image
       }
     };
 
-    if (name) {
-      getImageCount(name);
-    }
-  }, []);
-  useEffect(() => {
-    const name = localStorage.getItem("currentDir");
-    if (name) {
-      setFolderName(name);
-      setDirName(name);
-    }
-  }, [totalImages, imgCtx]);
+    loadImage();
+  }, [imgSelected, currIndex, destinationDir]);
+
+  // useEffect(() => {
+  //   const name = localStorage.getItem("currentDir");
+  //   const getImageCount = async (folderName) => {
+  //     const result = await window.electron.ipcRenderer.invoke(
+  //       "get-image-count",
+  //       folderName
+  //     );
+
+  //     if (result.success) {
+  //       setCurrIndex(result.count - 1);
+  //       setIsCropped(true);
+  //       console.log("Image count:", result.count);
+  //     } else {
+  //       console.error("Error:", result.error);
+  //     }
+  //   };
+
+  //   if (name) {
+  //     getImageCount(name);
+  //   }
+  // }, []);
+
+  // useEffect(() => {
+  //   const name = localStorage.getItem("currentDir");
+  //   if (name) {
+  //     setFolderName(name);
+  //     setDirName(name);
+  //   }
+  // }, [totalImages, imgCtx]);
+
   const prevHandler = async () => {
     setCurrIndex((value) => {
       if (value === 0) {
@@ -93,7 +155,8 @@ const Homepage = () => {
   const nextHandler = async () => {
     setCurrIndex((value) => {
       if (value === imgCtx.selectedImage.length - 1) {
-        alert("You have reached the last image");
+        nextPdfHandler();
+        // alert("You have reached the last image");
         return value;
       } else {
         const newIndex = value + 1;
@@ -258,14 +321,47 @@ const Homepage = () => {
   //   }
   // }, [folderName, imgSelected, currIndex, cropperRef, nextHandler]);
 
+  const nextPdfHandler = async () => {
+    const nextIndex = currentPdfIndex + 1;
+
+    if (nextIndex >= totalPdfs.length) {
+      alert("No next PDF available");
+      return;
+    }
+
+    const nextFolderName = totalPdfs[nextIndex]; // e.g., 'erew'
+    const nextFolderPath = `${destinationDir}\\${nextFolderName}`;
+
+    const result = await window.electron.ipcRenderer.invoke(
+      "check-folder-images",
+      nextFolderPath
+    );
+
+    if (result.success && result.hasImages) {
+      setCurrentPdfIndex(nextIndex);
+    } else {
+      alert("Next PDF folder does not exist or has no images.");
+    }
+  };
+
+  const prevPdfHandler = () => {
+    setCurrentPdfIndex((prevIndex) => {
+      if (prevIndex === 0) {
+        alert("No previous PDF available");
+        return prevIndex;
+      }
+      return prevIndex - 1;
+    });
+  };
+
   const saveHandler = useCallback(async () => {
     setLoading(true);
 
     try {
-      if (!folderName?.trim()) {
-        toast.error("Please enter folder name!");
-        return;
-      }
+      // if (!folderName?.trim()) {
+      //   toast.error("Please enter folder name!");
+      //   return;
+      // }
 
       if (
         !Array.isArray(imgSelected) ||
@@ -312,7 +408,8 @@ const Homepage = () => {
         {
           buffer: uint8Array,
           filename: `cropped-${imageName.replace(/\s+/g, "_")}`,
-          folderName,
+          folderName: totalPdfs[currentPdfIndex],
+          destinationDir: destinationDir,
           imageName,
         }
       );
@@ -346,6 +443,7 @@ const Homepage = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [saveHandler]);
+
   const handleFileChange = async (event) => {
     const files = event.target.files;
 
@@ -426,8 +524,6 @@ const Homepage = () => {
     setIsCropped(result.exists);
   };
 
-  console.log(imgSelected);
-
   // const clearHandler = () => {
   //   imgCtx.resetSelectedImage();
   //   setCurrIndex(0);
@@ -477,17 +573,6 @@ const Homepage = () => {
       setIsConverting(false);
     }
   };
-  const handleDrop = (event) => {
-    event.preventDefault();
-  };
-
-  const handleDragOver = (event) => {
-    event.preventDefault();
-    setIsDragOver(true);
-  };
-  const handleDragLeave = () => {
-    setIsDragOver(false);
-  };
 
   const handleRightRotate = () => {
     const cropper = cropperRef.current.cropper;
@@ -523,7 +608,7 @@ const Homepage = () => {
       if (result.success) {
         setSelectedDir(result.directory); // Set the selected directory
         // Now, get the image names from the selected directory
-        await fetchImageNames(result.directory);
+        // await fetchImageNames(result.directory);
       } else {
         setDirError(result.error); // Set error if the directory is not selected properly
         imgCtx.addAllImg([]); // Clear any previous image names
@@ -559,6 +644,92 @@ const Homepage = () => {
       console.error(error);
     }
   };
+
+  const handleDirectorySelect2 = async (type) => {
+    const result = await window.electron.ipcRenderer.invoke(
+      "select-directory",
+      type
+    );
+    console.log(result);
+
+    if (result.success) {
+      if (type === "source") {
+        console.log("Source Directory:", result.directory);
+        setSourceDir(result.directory);
+      } else if (type === "destination") {
+        setDestinationDir(result.directory);
+      }
+    } else {
+      console.error("Error selecting directory:", result.error);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!sourceDir || !destinationDir) {
+      alert("Please select both source and destination directories.");
+      return;
+    }
+
+    try {
+      toastIdRef.current = toast.loading("📁 Starting batch PDF processing…", {
+        autoClose: false,
+      });
+      const resultspdf = await window.electron.ipcRenderer.invoke(
+        "get-pdf-names",
+
+        sourceDir
+      );
+      console.log(resultspdf);
+      if (resultspdf.success) {
+        setTotalPdfs(resultspdf.pdfs);
+      }
+      const result = await window.electron.ipcRenderer.invoke(
+        "process-all-pdfs",
+        {
+          sourceDir,
+          destinationDir,
+        }
+      );
+
+      if (!result.success) {
+        toast.update(toastIdRef.current, {
+          render: `❌ ${result.error}`,
+          type: "error",
+          isLoading: false,
+          autoClose: 5000,
+        });
+        return;
+      }
+
+      const { results } = result;
+
+      const failed = results.filter((r) => !r.success);
+      const succeeded = results.filter((r) => r.success);
+
+      toast.update(toastIdRef.current, {
+        render: `✅ ${succeeded.length} PDFs processed. ❌ ${failed.length} failed.`,
+        type: "success",
+        isLoading: false,
+        autoClose: 5000,
+      });
+
+      if (failed.length > 0) {
+        console.warn("Failed files:", failed);
+      }
+
+      toastIdRef.current = null;
+    } catch (err) {
+      console.error(err);
+      toast.update(toastIdRef.current, {
+        render: "❌ Unexpected error during processing.",
+        type: "error",
+        isLoading: false,
+        autoClose: 5000,
+      });
+      toastIdRef.current = null;
+    }
+  };
+
   return (
     <>
       <DrawerAppBar
@@ -577,7 +748,7 @@ const Homepage = () => {
         <div className={classes.box}>
           {imgSelected.length === 0 && (
             <div className={classes.mainbox}>
-              <div
+              {/* <div
                 className={`${classes.dropbox} `}
                 onDragLeave={handleDragLeave}
                 onDragOver={handleDragOver}
@@ -598,8 +769,142 @@ const Homepage = () => {
                     style={{ display: "none" }}
                   />
                 </div>
-              </div>
+              </div> */}
 
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2rem",
+                    maxWidth: "600px",
+                    margin: "2rem auto",
+                  }}
+                >
+                  {/* Source Directory */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <label htmlFor="source-dir" style={{ fontWeight: "bold" }}>
+                      Source Directory
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                      }}
+                    >
+                      <input
+                        id="source-dir"
+                        type="text"
+                        value={sourceDir}
+                        readOnly
+                        placeholder="No directory selected"
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          border: "1px solid #ccc",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleDirectorySelect2("source")}
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                          borderRadius: "4px",
+                          border: "1px solid #ccc",
+                          backgroundColor: "#f5f5f5",
+                        }}
+                      >
+                        Browse...
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Destination Directory */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <label
+                      htmlFor="destination-dir"
+                      style={{ fontWeight: "bold" }}
+                    >
+                      Destination Directory
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                      }}
+                    >
+                      <input
+                        id="destination-dir"
+                        type="text"
+                        value={destinationDir}
+                        readOnly
+                        placeholder="No directory selected"
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          border: "1px solid #ccc",
+                          borderRadius: "4px",
+                          fontSize: "14px",
+                        }}
+                      />
+                      <button
+                        onClick={() => handleDirectorySelect2("destination")}
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: "14px",
+                          cursor: "pointer",
+                          borderRadius: "4px",
+                          border: "1px solid #ccc",
+                          backgroundColor: "#f5f5f5",
+                        }}
+                      >
+                        Browse...
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={handleSubmit}
+                    style={{
+                      alignSelf: "flex-end",
+                      marginTop: "1rem",
+                      padding: "10px 20px",
+                      fontSize: "14px",
+                      borderRadius: "4px",
+                      border: "1px solid #007bff",
+                      backgroundColor: "#007bff",
+                      color: "#fff",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Submit
+                  </button>
+                </div>
+              </div>
               <div className={classes.continueBox}>
                 <h2 className={classes.continueText}>
                   📂 Continue Working on Existing Images
@@ -649,7 +954,8 @@ const Homepage = () => {
                 </div>
 
                 <Cropper
-                  src={`http://localhost:3400/images/${dirName}/${imgSelected[currIndex]}`}
+                  // src={`http://localhost:3400/images/${dirName}/${imgSelected[currIndex]}`}
+                  src={imageSrc}
                   style={{
                     height: "70vh", // Updated to 'vh' for viewport height
                     width: "70vw", // Updated to 'vw' for viewport width
@@ -722,6 +1028,16 @@ const Homepage = () => {
                   <Grid container spacing={2} justifyContent="center">
                     <Grid item>
                       <Button
+                        variant="outlined"
+                        color="warning"
+                        startIcon={<ArrowBackIosIcon />}
+                        onClick={prevPdfHandler}
+                      >
+                        PREV PDF
+                      </Button>
+                    </Grid>
+                    <Grid item>
+                      <Button
                         variant="contained"
                         color="secondary"
                         startIcon={<ArrowBackIosIcon />}
@@ -759,6 +1075,17 @@ const Homepage = () => {
                         onClick={nextHandler}
                       >
                         NEXT
+                      </Button>
+                    </Grid>
+
+                    <Grid item>
+                      <Button
+                        variant="outlined"
+                        color="warning"
+                        endIcon={<ArrowForwardIosIcon />}
+                        onClick={nextPdfHandler}
+                      >
+                        NEXT PDF
                       </Button>
                     </Grid>
                   </Grid>

@@ -162,19 +162,86 @@ const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 // 🚫 DO NOT SET workerSrc in Node.js
 // pdfjsLib.GlobalWorkerOptions.workerSrc = ...
 
-parentPort.on('message', async ({ buffer, name, documentsDir }) => {
+// parentPort.on('message', async ({ buffer, name, documentsDir }) => {
+//   try {
+//     const pdfBuffer = new Uint8Array(buffer);
+
+//     // ✅ Dynamically import ESM-only imagemin packages
+//     const imagemin = (await import('imagemin')).default;
+//     const imageminPngquant = (await import('imagemin-pngquant')).default;
+
+//     const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+//     const pdf = await loadingTask.promise;
+
+//     const pdfBaseName = path.parse(name).name;
+//     const outputDir = path.join(documentsDir, 'images', pdfBaseName);
+//     fs.mkdirSync(outputDir, { recursive: true });
+
+//     const imageNames = [];
+
+//     for (let i = 0; i < pdf.numPages; i++) {
+//       const page = await pdf.getPage(i + 1);
+//       const viewport = page.getViewport({ scale: 2 });
+
+//       const canvas = createCanvas(viewport.width, viewport.height);
+//       const context = canvas.getContext('2d');
+
+//       const renderContext = { canvasContext: context, viewport };
+//       await page.render(renderContext).promise;
+
+//       const imageBuffer = canvas.toBuffer('image/png');
+//       const compressedBuffer = await imagemin.buffer(imageBuffer, {
+//         plugins: [
+//           imageminPngquant({
+//             quality: [0.4, 0.6],
+//             speed: 1,
+//           }),
+//         ],
+//       });
+
+//       const imageName = `${pdfBaseName}-${i + 1}.png`;
+//       const imagePath = path.join(outputDir, imageName);
+//       fs.writeFileSync(imagePath, compressedBuffer);
+//       imageNames.push(imageName);
+
+//       try {
+//         canvas.width = 0;
+//         canvas.height = 0;
+//       } catch (_) {}
+
+//       global.gc?.();
+//       await new Promise((r) => setImmediate(r));
+
+//       parentPort.postMessage({
+//         success: true,
+//         folderName: pdfBaseName,
+//         imageName,
+//         imageIndex: i + 1,
+//         totalImages: pdf.numPages,
+//       });
+//     }
+
+//     parentPort.postMessage({
+//       success: true,
+//       folderName: pdfBaseName,
+//       images: imageNames,
+//     });
+//   } catch (err) {
+//     console.error('Failed to process PDF:', err);
+//     parentPort.postMessage({ success: false, folderName: null, images: [] });
+//   }
+// });
+
+parentPort.on("message", async ({ filePath, outputDir }) => {
   try {
-    const pdfBuffer = new Uint8Array(buffer);
+    const pdfBuffer = fs.readFileSync(filePath);
 
-    // ✅ Dynamically import ESM-only imagemin packages
-    const imagemin = (await import('imagemin')).default;
-    const imageminPngquant = (await import('imagemin-pngquant')).default;
+    const imagemin = (await import("imagemin")).default;
+    const imageminPngquant = (await import("imagemin-pngquant")).default;
 
-    const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
-    const pdf = await loadingTask.promise;
+    const pdf = await pdfjsLib.getDocument({ data: pdfBuffer }).promise;
+    const pdfBaseName = path.parse(filePath).name;
 
-    const pdfBaseName = path.parse(name).name;
-    const outputDir = path.join(documentsDir, 'images', pdfBaseName);
     fs.mkdirSync(outputDir, { recursive: true });
 
     const imageNames = [];
@@ -184,12 +251,13 @@ parentPort.on('message', async ({ buffer, name, documentsDir }) => {
       const viewport = page.getViewport({ scale: 2 });
 
       const canvas = createCanvas(viewport.width, viewport.height);
-      const context = canvas.getContext('2d');
+      const context = canvas.getContext("2d");
 
       const renderContext = { canvasContext: context, viewport };
       await page.render(renderContext).promise;
 
-      const imageBuffer = canvas.toBuffer('image/png');
+      const imageBuffer = canvas.toBuffer("image/png");
+
       const compressedBuffer = await imagemin.buffer(imageBuffer, {
         plugins: [
           imageminPngquant({
@@ -204,14 +272,6 @@ parentPort.on('message', async ({ buffer, name, documentsDir }) => {
       fs.writeFileSync(imagePath, compressedBuffer);
       imageNames.push(imageName);
 
-      try {
-        canvas.width = 0;
-        canvas.height = 0;
-      } catch (_) {}
-
-      global.gc?.();
-      await new Promise((r) => setImmediate(r));
-
       parentPort.postMessage({
         success: true,
         folderName: pdfBaseName,
@@ -219,16 +279,36 @@ parentPort.on('message', async ({ buffer, name, documentsDir }) => {
         imageIndex: i + 1,
         totalImages: pdf.numPages,
       });
+
+      // Clean up
+      try {
+        canvas.width = 0;
+        canvas.height = 0;
+      } catch (_) {}
+
+      global.gc?.();
+      await new Promise((r) => setImmediate(r));
     }
 
+    // ✅ Final result
     parentPort.postMessage({
       success: true,
       folderName: pdfBaseName,
       images: imageNames,
     });
+
+    // ✅ Exit the worker
+    process.exit(0); // <-- This is crucial
   } catch (err) {
-    console.error('Failed to process PDF:', err);
-    parentPort.postMessage({ success: false, folderName: null, images: [] });
+    console.error("Failed to process PDF:", err);
+
+    parentPort.postMessage({
+      success: false,
+      folderName: null,
+      images: [],
+      error: err.message,
+    });
+
+    process.exit(1); // <-- Also exit on error
   }
 });
-

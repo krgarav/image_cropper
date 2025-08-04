@@ -21,6 +21,7 @@ function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1920,
     height: 1080,
+    devTools: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"), // ✅ Load preload script
       contextIsolation: true, // ✅ Required for contextBridge
@@ -28,9 +29,12 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindow.setMenu(null);
-  mainWindow.loadURL(`http://localhost:${port}`);
-  // mainWindow.loadURL(`http://localhost:${5173}`);
+  mainWindow.webContents.once("did-finish-load", () => {
+    mainWindow.webContents.openDevTools();
+  });
+  // mainWindow.setMenu(null);
+  // mainWindow.loadURL(`http://localhost:${port}`);
+  mainWindow.loadURL(`http://localhost:${5173}`);
   // mainWindow.webContents.openDevTools();
 }
 
@@ -86,32 +90,29 @@ async function compressAndConvertImagesToPdf(imagePaths, outputPath) {
   fs.writeFileSync(outputPath, pdfBytes);
 }
 
-ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
+ipcMain.handle("process-pdf", async (event, { pdfPath, destinationDir }) => {
   return new Promise((resolve, reject) => {
-    const documentsDir = app.getPath("documents");
-    const pdfBaseName = path.parse(name).name;
-    const outputDir = path.join(documentsDir, "images", pdfBaseName);
+    const pdfBaseName = path.parse(pdfPath).name;
+    const outputDir = path.join(destinationDir, pdfBaseName);
 
     if (fs.existsSync(outputDir)) {
       return resolve({
         success: false,
-        error: `Folder with the name "${pdfBaseName}" already exists.`,
+        error: `Folder "${pdfBaseName}" already exists in destination.`,
       });
     }
 
     const worker = new Worker(path.join(__dirname, "pdfWorker.js"));
-    worker.postMessage({ buffer, name, documentsDir });
+    worker.postMessage({ filePath: pdfPath, outputDir });
 
     let finalResponse = null;
 
     worker.on("message", (data) => {
       if (data.imageName) {
-        // ⏳ Progress update from worker
-        event.sender.send("pdf-progress", data);
+        event.sender.send("pdf-progress", data); // Optional progress
       }
 
       if (data.images) {
-        // ✅ Final result
         finalResponse = data;
       }
     });
@@ -133,6 +134,99 @@ ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
   });
 });
 
+ipcMain.handle(
+  "process-all-pdfs",
+  async (event, { sourceDir, destinationDir }) => {
+    try {
+      const files = fs
+        .readdirSync(sourceDir)
+        .filter((file) => file.toLowerCase().endsWith(".pdf"));
+
+      if (files.length === 0) {
+        return {
+          success: false,
+          error: "No PDF files found in the source directory.",
+        };
+      }
+
+      const results = [];
+
+      for (const file of files) {
+        const filePath = path.join(sourceDir, file);
+        const pdfBaseName = path.parse(file).name;
+        const outputDir = path.join(destinationDir, pdfBaseName);
+
+        if (fs.existsSync(outputDir)) {
+          results.push({
+            file,
+            success: false,
+            error: `Output folder "${pdfBaseName}" already exists.`,
+          });
+          continue; // Skip to next
+        }
+
+        const result = await new Promise((resolve) => {
+          const worker = new Worker(path.join(__dirname, "pdfWorker.js"));
+          let finalResponse = null;
+
+          worker.postMessage({ filePath, outputDir });
+
+          worker.on("message", (data) => {
+            if (data.imageName) {
+              // Optional: Emit progress per image to renderer
+              event.sender.send("pdf-progress", { file, ...data });
+            }
+
+            if (data.images) {
+              finalResponse = { file, success: true, images: data.images };
+            }
+          });
+
+          worker.on("error", (err) => {
+            resolve({ file, success: false, error: err.message });
+          });
+
+          worker.on("exit", (code) => {
+            if (code !== 0) {
+              resolve({
+                file,
+                success: false,
+                error: `Worker exited with code ${code}`,
+              });
+            } else {
+              resolve(
+                finalResponse || {
+                  file,
+                  success: false,
+                  error: "Unexpected exit before final result.",
+                }
+              );
+            }
+          });
+        });
+
+        results.push(result);
+      }
+
+      return { success: true, results };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+);
+
+ipcMain.handle("get-pdf-files", async (event, dirPath) => {
+  try {
+    const files = fs.readdirSync(dirPath);
+    const pdfs = files
+      .filter((file) => file.toLowerCase().endsWith(".pdf"))
+      .map((file) => path.join(dirPath, file));
+    return pdfs;
+  } catch (error) {
+    console.error("Error reading directory:", error);
+    return [];
+  }
+});
 // ipcMain.handle(
 //   "save-cropped-img",
 //   async (event, { buffer, folderName, imageName }) => {
@@ -173,31 +267,31 @@ ipcMain.handle("process-pdf", async (event, { buffer, name }) => {
 
 ipcMain.handle(
   "save-cropped-img",
-  async (event, { buffer, folderName, imageName }) => {
+  async (event, { buffer, folderName, imageName, destinationDir }) => {
     try {
-      if (!buffer || !folderName) {
-        throw new Error("Missing image buffer or folder name.");
+      if (!buffer || !folderName || !destinationDir) {
+        throw new Error(
+          "Missing buffer, folder name, or destination directory."
+        );
       }
 
-      const documentsDir = app.getPath("documents");
-      const baseDir = path.join(documentsDir, "images", folderName);
+      const baseDir = path.join(destinationDir, folderName);
       const croppedDir = path.join(baseDir, "cropped");
 
       if (!fs.existsSync(baseDir)) {
         return {
           success: false,
-          error: `Folder "${folderName}" does not exist in Documents/images.`,
+          error: `Folder "${folderName}" does not exist in the destination directory.`,
         };
       }
 
       if (!fs.existsSync(croppedDir)) {
-        fs.mkdirSync(croppedDir);
+        fs.mkdirSync(croppedDir, { recursive: true });
       }
 
-      const fileName = `cropped-${imageName.replace(/\s+/g, "_")}`;
-      const filePath = path.join(croppedDir, fileName);
+      const safeFileName = `cropped-${imageName.replace(/\s+/g, "_")}`;
+      const filePath = path.join(croppedDir, safeFileName);
 
-      // ✅ Convert from Uint8Array to Buffer before saving
       await fs.promises.writeFile(filePath, Buffer.from(buffer));
 
       return { success: true, path: filePath };
@@ -385,6 +479,102 @@ ipcMain.handle("get-image-count", async (event, folderName) => {
     return {
       success: false,
       error: error.message,
+    };
+  }
+});
+
+ipcMain.handle("get-base64-image", async (event, imagePath) => {
+  try {
+    const buffer = fs.readFileSync(imagePath);
+    const ext = path.extname(imagePath).slice(1); // "png", "jpg"
+    const base64 = buffer.toString("base64");
+    return `data:image/${ext};base64,${base64}`;
+  } catch (err) {
+    console.error("Failed to read image:", err);
+    return null;
+  }
+});
+
+ipcMain.handle("get-total-images", async (event, { directory, baseFolder }) => {
+  try {
+    const folderPath = path.join(directory, baseFolder);
+
+    if (!fs.existsSync(folderPath)) {
+      return { success: false, error: "Folder does not exist" };
+    }
+
+    const files = fs.readdirSync(folderPath);
+    const imageFiles = files.filter((file) =>
+      /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(file)
+    );
+
+    return {
+      success: true,
+      totalImages: imageFiles.length,
+      imageFiles,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message,
+    };
+  }
+});
+
+ipcMain.handle("get-pdf-names", async (event, sourceDir) => {
+  try {
+    if (!fs.existsSync(sourceDir)) {
+      return {
+        success: false,
+        error: "Source directory does not exist.",
+        pdfs: [],
+      };
+    }
+
+    const files = fs.readdirSync(sourceDir);
+    const pdfs = files
+      .filter((file) => file.toLowerCase().endsWith(".pdf"))
+      .map((file) => path.parse(file).name); // remove .pdf extension
+
+    return {
+      success: true,
+      pdfs,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message,
+      pdfs: [],
+    };
+  }
+});
+
+ipcMain.handle("check-folder-images", async (event, folderPath) => {
+  try {
+    if (!fs.existsSync(folderPath)) {
+      return {
+        success: false,
+        error: "Folder does not exist.",
+        hasImages: false,
+      };
+    }
+
+    const files = fs.readdirSync(folderPath);
+    const imageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+
+    const hasImages = files.some((file) =>
+      imageExtensions.includes(path.extname(file).toLowerCase())
+    );
+
+    return {
+      success: true,
+      hasImages,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message,
+      hasImages: false,
     };
   }
 });
