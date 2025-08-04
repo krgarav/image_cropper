@@ -10,10 +10,12 @@ const { createCanvas } = require("canvas");
 const sharp = require("sharp");
 const { Worker } = require("worker_threads");
 const { app: expressApp, startServer } = require("./server");
+// const isDev = require("electron-is-dev");
 async function loadPdfJs() {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs"); // Dynamically import ES module
   return pdfjsLib;
 }
+
 const port = 3400;
 
 // Create main Electron window
@@ -32,10 +34,10 @@ function createWindow() {
   // mainWindow.webContents.once("did-finish-load", () => {
   //   mainWindow.webContents.openDevTools();
   // });
-  // mainWindow.setMenu(null);
+  mainWindow.setMenu(null);
   mainWindow.loadURL(`http://localhost:${port}`);
   // mainWindow.loadURL(`http://localhost:${5173}`);
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 }
 
 // Start Express server when Electro
@@ -177,7 +179,13 @@ ipcMain.handle(
         }
 
         const result = await new Promise((resolve) => {
-          const worker = new Worker(path.join(__dirname, "pdfWorker.js"));
+          //         const workerPath = isDev
+          // ? path.join(__dirname, "pdfWorker.js")
+          // : path.join(process.resourcesPath, "pdfWorker.js");
+
+          const workerPath = path.join(process.resourcesPath, "pdfWorker.js");
+          const worker = new Worker(workerPath);
+          // const worker = new Worker(path.join(__dirname, "pdfWorker.js"));
           let finalResponse = null;
 
           worker.postMessage({ filePath, outputDir });
@@ -233,7 +241,6 @@ ipcMain.handle(
     }
   }
 );
-
 
 ipcMain.handle("get-pdf-files", async (event, dirPath) => {
   try {
@@ -599,9 +606,6 @@ ipcMain.handle("check-folder-images", async (event, folderPath) => {
   }
 });
 
-
-
-
 ipcMain.handle("get-folder-names", async (event, directoryPath) => {
   try {
     if (!fs.existsSync(directoryPath)) {
@@ -631,49 +635,56 @@ ipcMain.handle("get-folder-names", async (event, directoryPath) => {
   }
 });
 
+ipcMain.handle(
+  "convert-dir-images-to-pdf-using-folder",
+  async (event, { directory, folderName }) => {
+    try {
+      if (!directory || !folderName) {
+        throw new Error("Directory and folder name are required.");
+      }
 
+      const rootDir = path.join(directory, folderName);
+      const croppedDir = path.join(rootDir, "cropped");
 
+      if (!fs.existsSync(croppedDir)) {
+        throw new Error(`'cropped' folder does not exist in ${rootDir}`);
+      }
 
-ipcMain.handle("convert-dir-images-to-pdf-using-folder", async (event, { directory, folderName }) => {
-  try {
-    if (!directory || !folderName) {
-      throw new Error("Directory and folder name are required.");
+      const allFiles = fs.readdirSync(croppedDir);
+      const imageExtensions = [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".tiff",
+      ];
+
+      const imagePaths = allFiles
+        .filter((file) =>
+          imageExtensions.includes(path.extname(file).toLowerCase())
+        )
+        .map((file) => path.join(croppedDir, file));
+
+      if (imagePaths.length === 0) {
+        throw new Error("No images found in the 'cropped' folder.");
+      }
+
+      const outputPath = path.join(rootDir, `${folderName}.pdf`);
+
+      await compressAndConvertImagesToPdf(imagePaths, outputPath);
+
+      return {
+        success: true,
+        message: `PDF saved as ${folderName}.pdf in ${rootDir}`,
+        outputPath,
+      };
+    } catch (error) {
+      console.error("Error during PDF conversion:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
-
-    const rootDir = path.join(directory, folderName);
-    const croppedDir = path.join(rootDir, "cropped");
-
-    if (!fs.existsSync(croppedDir)) {
-      throw new Error(`'cropped' folder does not exist in ${rootDir}`);
-    }
-
-    const allFiles = fs.readdirSync(croppedDir);
-    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"];
-
-    const imagePaths = allFiles
-      .filter((file) =>
-        imageExtensions.includes(path.extname(file).toLowerCase())
-      )
-      .map((file) => path.join(croppedDir, file));
-
-    if (imagePaths.length === 0) {
-      throw new Error("No images found in the 'cropped' folder.");
-    }
-
-    const outputPath = path.join(rootDir, `${folderName}.pdf`);
-
-    await compressAndConvertImagesToPdf(imagePaths, outputPath);
-
-    return {
-      success: true,
-      message: `PDF saved as ${folderName}.pdf in ${rootDir}`,
-      outputPath,
-    };
-  } catch (error) {
-    console.error("Error during PDF conversion:", error);
-    return {
-      success: false,
-      error: error.message,
-    };
   }
-});
+);
