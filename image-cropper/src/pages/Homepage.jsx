@@ -52,6 +52,44 @@ const Homepage = () => {
   const [imageSrc, setImageSrc] = useState(null);
   const [totalPdfs, setTotalPdfs] = useState([]);
   const [currentPdfIndex, setCurrentPdfIndex] = useState(0);
+  const [progressInfo, setProgressInfo] = useState(null);
+  const pdfToastIdRef = useRef(null);
+
+  useEffect(() => {
+  // ✅ Define the listener as a variable
+  const handlePdfProgress = (_event, data) => {
+    const { file, current, total, success } = data;
+
+    const message = success
+      ? `✅ Processed ${file} (${current}/${total})`
+      : `⏳ Processing ${file} (${current}/${total})`;
+
+    if (!pdfToastIdRef.current) {
+      pdfToastIdRef.current = toast.info(message, {
+        toastId: "pdf-progress-toast",
+        autoClose: false,
+        closeButton: false,
+      });
+    } else {
+      toast.update(pdfToastIdRef.current, {
+        render: message,
+        type: success ? "success" : "info",
+        autoClose: success ? 3000 : false,
+      });
+    }
+  };
+
+  // ✅ Register the listener
+  window.electron.ipcRenderer.on("pdf-file-progress", handlePdfProgress);
+
+  return () => {
+    // ✅ Clean up correctly
+    window.electron.ipcRenderer.removeListener(
+      "pdf-file-progress",
+      handlePdfProgress
+    );
+  };
+}, []);
 
   useEffect(() => {
     const getTotalImages = async () => {
@@ -122,44 +160,28 @@ const Homepage = () => {
     });
   };
 
-  // const nextHandler = async () => {
-  //   setCurrIndex((value) => {
-  //     if (value === imgCtx.selectedImage.length - 1) {
-  //       nextPdfHandler();
-  //       const res = await window.electron.ipcRenderer.invoke("convert-dir-images-to-pdf-using-folder")
-  //       // alert("You have reached the last image");
-  //       return value;
-  //     } else {
-  //       const newIndex = value + 1;
-  //       console.log(newIndex);
-  //       const imageName = imgCtx.selectedImage[newIndex];
-  //       checkCroppedStatus(imageName, folderName);
-  //       return newIndex;
-  //     }
-  //   });
-  // };
-
-
-
   const nextHandler = async () => {
-  const isLastImage = currIndex === imgCtx.selectedImage.length - 1;
+    const isLastImage = currIndex === imgCtx.selectedImage.length - 1;
 
-  if (isLastImage) {
-    await nextPdfHandler(); // this should also be async if it's calling an IPC
-    await window.electron.ipcRenderer.invoke("convert-dir-images-to-pdf-using-folder", {
-      directory: destinationDir,
-      folderName:totalPdfs[currentPdfIndex],
-    });
-    // optionally notify user
-    // alert("PDF conversion complete");
-  } else {
-    const newIndex = currIndex + 1;
-    setCurrIndex(newIndex);
+    if (isLastImage) {
+      await nextPdfHandler(); // this should also be async if it's calling an IPC
+      await window.electron.ipcRenderer.invoke(
+        "convert-dir-images-to-pdf-using-folder",
+        {
+          directory: destinationDir,
+          folderName: totalPdfs[currentPdfIndex],
+        }
+      );
+      // optionally notify user
+      // alert("PDF conversion complete");
+    } else {
+      const newIndex = currIndex + 1;
+      setCurrIndex(newIndex);
 
-    const imageName = imgCtx.selectedImage[newIndex];
-    checkCroppedStatus(imageName, folderName);
-  }
-};
+      const imageName = imgCtx.selectedImage[newIndex];
+      checkCroppedStatus(imageName, folderName);
+    }
+  };
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "ArrowRight") {

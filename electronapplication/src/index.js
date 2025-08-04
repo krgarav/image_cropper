@@ -29,12 +29,12 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  mainWindow.webContents.once("did-finish-load", () => {
-    mainWindow.webContents.openDevTools();
-  });
+  // mainWindow.webContents.once("did-finish-load", () => {
+  //   mainWindow.webContents.openDevTools();
+  // });
   // mainWindow.setMenu(null);
-  // mainWindow.loadURL(`http://localhost:${port}`);
-  mainWindow.loadURL(`http://localhost:${5173}`);
+  mainWindow.loadURL(`http://localhost:${port}`);
+  // mainWindow.loadURL(`http://localhost:${5173}`);
   // mainWindow.webContents.openDevTools();
 }
 
@@ -150,6 +150,8 @@ ipcMain.handle(
       }
 
       const results = [];
+      const total = files.length;
+      let processed = 0;
 
       for (const file of files) {
         const filePath = path.join(sourceDir, file);
@@ -162,7 +164,16 @@ ipcMain.handle(
             success: false,
             error: `Output folder "${pdfBaseName}" already exists.`,
           });
-          continue; // Skip to next
+
+          processed++;
+          event.sender.send("pdf-file-progress", {
+            current: processed,
+            total,
+            file,
+            skipped: true,
+          });
+
+          continue;
         }
 
         const result = await new Promise((resolve) => {
@@ -173,7 +184,6 @@ ipcMain.handle(
 
           worker.on("message", (data) => {
             if (data.imageName) {
-              // Optional: Emit progress per image to renderer
               event.sender.send("pdf-progress", { file, ...data });
             }
 
@@ -206,6 +216,15 @@ ipcMain.handle(
         });
 
         results.push(result);
+        processed++;
+
+        // ✅ Emit progress for UI after each file
+        event.sender.send("pdf-file-progress", {
+          current: processed,
+          total,
+          file,
+          success: result.success,
+        });
       }
 
       return { success: true, results };
@@ -214,6 +233,7 @@ ipcMain.handle(
     }
   }
 );
+
 
 ipcMain.handle("get-pdf-files", async (event, dirPath) => {
   try {
