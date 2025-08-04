@@ -108,36 +108,6 @@ const Homepage = () => {
     loadImage();
   }, [imgSelected, currIndex, destinationDir]);
 
-  // useEffect(() => {
-  //   const name = localStorage.getItem("currentDir");
-  //   const getImageCount = async (folderName) => {
-  //     const result = await window.electron.ipcRenderer.invoke(
-  //       "get-image-count",
-  //       folderName
-  //     );
-
-  //     if (result.success) {
-  //       setCurrIndex(result.count - 1);
-  //       setIsCropped(true);
-  //       console.log("Image count:", result.count);
-  //     } else {
-  //       console.error("Error:", result.error);
-  //     }
-  //   };
-
-  //   if (name) {
-  //     getImageCount(name);
-  //   }
-  // }, []);
-
-  // useEffect(() => {
-  //   const name = localStorage.getItem("currentDir");
-  //   if (name) {
-  //     setFolderName(name);
-  //     setDirName(name);
-  //   }
-  // }, [totalImages, imgCtx]);
-
   const prevHandler = async () => {
     setCurrIndex((value) => {
       if (value === 0) {
@@ -152,21 +122,44 @@ const Homepage = () => {
     });
   };
 
+  // const nextHandler = async () => {
+  //   setCurrIndex((value) => {
+  //     if (value === imgCtx.selectedImage.length - 1) {
+  //       nextPdfHandler();
+  //       const res = await window.electron.ipcRenderer.invoke("convert-dir-images-to-pdf-using-folder")
+  //       // alert("You have reached the last image");
+  //       return value;
+  //     } else {
+  //       const newIndex = value + 1;
+  //       console.log(newIndex);
+  //       const imageName = imgCtx.selectedImage[newIndex];
+  //       checkCroppedStatus(imageName, folderName);
+  //       return newIndex;
+  //     }
+  //   });
+  // };
+
+
+
   const nextHandler = async () => {
-    setCurrIndex((value) => {
-      if (value === imgCtx.selectedImage.length - 1) {
-        nextPdfHandler();
-        // alert("You have reached the last image");
-        return value;
-      } else {
-        const newIndex = value + 1;
-        console.log(newIndex);
-        const imageName = imgCtx.selectedImage[newIndex];
-        checkCroppedStatus(imageName, folderName);
-        return newIndex;
-      }
+  const isLastImage = currIndex === imgCtx.selectedImage.length - 1;
+
+  if (isLastImage) {
+    await nextPdfHandler(); // this should also be async if it's calling an IPC
+    await window.electron.ipcRenderer.invoke("convert-dir-images-to-pdf-using-folder", {
+      directory: destinationDir,
+      folderName:totalPdfs[currentPdfIndex],
     });
-  };
+    // optionally notify user
+    // alert("PDF conversion complete");
+  } else {
+    const newIndex = currIndex + 1;
+    setCurrIndex(newIndex);
+
+    const imageName = imgCtx.selectedImage[newIndex];
+    checkCroppedStatus(imageName, folderName);
+  }
+};
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "ArrowRight") {
@@ -191,7 +184,6 @@ const Homepage = () => {
         setTotalImages(totalImages);
         hasInsertedImage.current = true;
       }
-      console.log(imageName);
       imgCtx.addToSelectedImage(imageName);
       // If it’s the very last image, mark success
       if (imageIndex === totalImages) {
@@ -607,6 +599,16 @@ const Homepage = () => {
 
       if (result.success) {
         setSelectedDir(result.directory); // Set the selected directory
+        setDestinationDir(result.directory); // Set the destination directory
+        const resultsFolder = await window.electron.ipcRenderer.invoke(
+          "get-folder-names",
+          result.directory
+        );
+        if (resultsFolder.success) {
+          setTotalPdfs(resultsFolder.folders);
+
+          setCurrentPdfIndex(0); // Reset to the first PDF
+        }
         // Now, get the image names from the selected directory
         // await fetchImageNames(result.directory);
       } else {
@@ -679,7 +681,7 @@ const Homepage = () => {
 
         sourceDir
       );
-      console.log(resultspdf);
+
       if (resultspdf.success) {
         setTotalPdfs(resultspdf.pdfs);
       }

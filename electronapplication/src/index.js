@@ -578,3 +578,82 @@ ipcMain.handle("check-folder-images", async (event, folderPath) => {
     };
   }
 });
+
+
+
+
+ipcMain.handle("get-folder-names", async (event, directoryPath) => {
+  try {
+    if (!fs.existsSync(directoryPath)) {
+      return {
+        success: false,
+        error: "Directory does not exist.",
+        folders: [],
+      };
+    }
+
+    const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
+
+    const folders = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+
+    return {
+      success: true,
+      folders,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message,
+      folders: [],
+    };
+  }
+});
+
+
+
+
+ipcMain.handle("convert-dir-images-to-pdf-using-folder", async (event, { directory, folderName }) => {
+  try {
+    if (!directory || !folderName) {
+      throw new Error("Directory and folder name are required.");
+    }
+
+    const rootDir = path.join(directory, folderName);
+    const croppedDir = path.join(rootDir, "cropped");
+
+    if (!fs.existsSync(croppedDir)) {
+      throw new Error(`'cropped' folder does not exist in ${rootDir}`);
+    }
+
+    const allFiles = fs.readdirSync(croppedDir);
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"];
+
+    const imagePaths = allFiles
+      .filter((file) =>
+        imageExtensions.includes(path.extname(file).toLowerCase())
+      )
+      .map((file) => path.join(croppedDir, file));
+
+    if (imagePaths.length === 0) {
+      throw new Error("No images found in the 'cropped' folder.");
+    }
+
+    const outputPath = path.join(rootDir, `${folderName}.pdf`);
+
+    await compressAndConvertImagesToPdf(imagePaths, outputPath);
+
+    return {
+      success: true,
+      message: `PDF saved as ${folderName}.pdf in ${rootDir}`,
+      outputPath,
+    };
+  } catch (error) {
+    console.error("Error during PDF conversion:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+});
